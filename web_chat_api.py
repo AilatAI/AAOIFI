@@ -8,7 +8,7 @@ from pinecone import Pinecone
 OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY   = os.getenv("PINECONE_API_KEY")
 PINECONE_ENV       = os.getenv("PINECONE_ENVIRONMENT")
-PINECONE_INDEX     = "aaofi-standards"
+PINECONE_INDEX     = "aaoifi-standards"
 
 EMBED_MODEL        = "text-embedding-ada-002"
 CHAT_MODEL         = "gpt-3.5-turbo"
@@ -78,7 +78,7 @@ def answer_question(question: str) -> str:
             "3. After each factual statement or quoted fragment, append an inline citation of the form\n"
             "   (AAOIFI Std {standard_number} Sec {section_number or “Preface/Intro”} ¶ {paragraph_id})\n"
             "4. Also render each citation as a markdown link to the full text on your docs site, e.g.:\n"
-            "   `[AAOIFI {_id}](https://your-docs.example.org/aaofi/#{_id})`\n"
+            "   `[AAOIFI {_id}](https://your-docs.example.org/aaoifi/#{_id})`\n"
             "5. If the retrieved material doesn’t cover some part of the user’s question, explicitly say “Information on ‹X› is not available in the provided excerpts.”"
         )
     }
