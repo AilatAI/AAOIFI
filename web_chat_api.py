@@ -79,7 +79,9 @@ def answer_question(question: str) -> str:
             "   (AAOIFI Std {standard_number} Sec {section_number or “Preface/Intro”} ¶ {paragraph_id})\n"
             "4. Also render each citation as a markdown link to the full text on your docs site, e.g.:\n"
             "   `[AAOIFI {_id}](https://your-docs.example.org/aaoifi/#{_id})`\n"
-            "5. If the retrieved material doesn’t cover some part of the user’s question, explicitly say “Information on ‹X› is not available in the provided excerpts.”"
+            "5. If the retrieved material doesn’t cover some part of the user’s question, explicitly say “Information on ‹X› is not available in the provided excerpts.”
+            "6. End your answer with a friendly invitation to ask further questions, e.g.:”
+            "7. 'If you have any further questions, feel free to ask.'”"
         )
     }
     user = {
