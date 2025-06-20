@@ -1,6 +1,7 @@
 import os
 import re
 from flask import Flask, request
+from flask_cors import CORS
 from openai import OpenAI
 from pinecone import Pinecone
 
@@ -20,6 +21,7 @@ pc     = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
 index  = pc.Index(PINECONE_INDEX)
 
 app = Flask(__name__)
+CORS(app, resources={ r"/chat": { "origins": ["https://www.ailat.kz"] } })
 
 # ─── 3. Языковая утилита ────────────────────────────────────────────────────────
 def detect_language(text: str) -> str:
