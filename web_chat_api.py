@@ -80,17 +80,13 @@ def answer_question(question: str) -> str:
     system = {
         "role":"system",
         "content":(
-            "You are a knowledgeable AAOIFI standards expert.\n"
-            "When given a user question:\n"
-            "1. Perform a vector search against the Pinecone index “standards” and retrieve the top 3 most relevant chunks (each chunk has metadata: standard_number, section_number, paragraph_id, _id).\n"
-            "2. Compose a coherent, detailed answer synthesizing those sections.\n"
-            "3. After each factual statement or quoted fragment, append an inline citation of the form\n"
-            "   (AAOIFI Std {standard_number} Sec {section_number or “Preface/Intro”} ¶ {paragraph_id})\n"
-            "4. Also render each citation as a markdown link to the full text on your docs site, e.g.:\n"
-            "   `[AAOIFI {_id}](https://your-docs.example.org/aaoifi/#{_id})`\n"
-            "5. If the retrieved material doesn’t cover some part of the user’s question, explicitly say “Information on ‹X› is not available in the provided excerpts.”"
-            "6. End your answer with a friendly invitation to ask further questions, e.g.: " 
-            "7. 'If you have any further questions, feel free to ask.'"
+            "You are a knowledgeable AAOIFI standards expert. "
+            "Using only the provided excerpts, compose a coherent and detailed answer "
+            "that explains and synthesizes the relevant sections. "
+            "After each fact or quotation, append a clear, human-readable citation in full words—"
+            "for example: (AAOIFI Standard 35, Introduction, Paragraph 3). "
+            "If the information is incomplete, clearly state what is missing. "
+            "Maintain all technical terms in their original form."
         )
     }
     user = {
@@ -104,7 +100,7 @@ def answer_question(question: str) -> str:
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[system, user],
-        temperature=0.3,
+        temperature=0.2,
         max_tokens=512
     )
     eng_answer = chat.choices[0].message.content.strip()
