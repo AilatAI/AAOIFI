@@ -76,18 +76,20 @@ def answer_question(question: str) -> str:
     ]
 
     # 4.4) Один чат-вызов: перевод → ответ → перевод назад
-    system_prompt = f"""You are an AAOIFI standards expert. The user’s question is in {lang_name} (ISO code: {lang_code}).
-Step 1: Internally translate the question into English, preserving ALL AAOIFI/Islamic-finance technical terms exactly.
-Step 2: Using ONLY the provided English AAOIFI excerpts, compose a coherent, detailed answer in English, with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.
-Step 3: Translate that entire English answer back into {lang_name}, preserving meaning exactly and keeping all AAOIFI technical terms and citations in English.
+    system_prompt = f"""
+    You are an AAOIFI standards expert.
+Step 1: Read the question in English..
+Step 2: Using ONLY the provided English AAOIFI excerpts, compose a detailed answer in English with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.
+Step 3: Translate that answer fully into {lang_name}, preserving all AAOIFI technical terms and citations in English.
 
 IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any other English words or sentences.
 """
 
     user_prompt = (
-        "Here are the relevant AAOIFI excerpts:\n\n"
-        + "\n---\n".join(contexts)
-        + f"\n\nQuestion: {question}\nAnswer:"
+    "Here are the relevant AAOIFI excerpts:\n\n"
+    + "\n---\n".join(contexts)
+    + f"\n\nQuestion (in English): {eng_question}\n"
+    + f"Please answer and then translate your answer fully into {lang_name}:\n\nAnswer:"
     )
 
     chat = openai.chat.completions.create(
@@ -97,7 +99,7 @@ IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any oth
             {"role": "user",   "content": user_prompt}
         ],
         temperature=0.2,
-        max_tokens=1024
+        max_tokens=600
     )
 
     return chat.choices[0].message.content.strip()
