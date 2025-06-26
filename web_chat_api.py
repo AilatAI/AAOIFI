@@ -56,48 +56,38 @@ LANG_NAMES = {
 
 # ─── 4. Логика вашего answer_question ──────────────────────────────────────────
 def answer_question(question: str) -> str:
-    # 4.1) Определяем язык
+    # 1) Определяем язык пользователя
     lang_code = detect_language(question)
-    lang_name = LANG_NAMES.get(lang_code, 'English')
+    lang_name = LANG_NAMES.get(lang_code, "English")
 
-    # 4.2) Переводим вопрос на английский для поиска (если нужно)
-    if lang_code != 'en':
-        tran = openai.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role": "system", "content":
-                    "Translate the following into English, preserving all AAOIFI/Islamic-finance terms exactly."},
-                {"role": "user",   "content": question}
-            ],
-            temperature=0.1
-        )
-        eng_question = tran.choices[0].message.content.strip()
-    else:
-        eng_question = question
-
-    # 4.3) Создаем embedding и ищем по Pinecone
-    resp  = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
+    # 2) Создаём embedding и ищем в Pinecone
+    resp = openai.embeddings.create(model=EMBED_MODEL, input=question)
     q_emb = resp.data[0].embedding
     qr    = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
 
     contexts = [
-        f"{m.metadata.get('section_title')} (Std {m.metadata.get('standard_number')}):\n{m.metadata.get('chunk_text')}"
+        f"{m.metadata.get('section_title','')} "
+        f"(Std {m.metadata.get('standard_number','')}):\n"
+        f"{m.metadata.get('chunk_text','')}"
         for m in qr.matches
     ]
 
-    # 4.4) Один чат-вызов: перевод → ответ → перевод назад
-    system_prompt = f"""You are an AAOIFI standards expert, but you can't give advice, you only operate with facts. The user’s question is in {lang_name} (ISO code: {lang_code}).
-Step 1: Internally translate the question into English, preserving ALL AAOIFI/Islamic-finance technical terms exactly.
-Step 2: Using ONLY the provided English AAOIFI excerpts, compose a coherent, detailed answer in English, with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.
-Step 3: Translate that entire English answer back into {lang_name}, preserving meaning exactly and keeping all AAOIFI technical terms and citations in English.
-
-IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any other English words or sentences.
-"""
+    # 3) Один «meta-prompt» для всего workflow
+    system_prompt = (
+        f"You are an AAOIFI standards expert. The user’s question is in {lang_name}.\n"
+        "When you receive a question, follow these steps:\n"
+        "1. Detect the question’s original language.\n"
+        "2. If it’s not English, translate it into English for internal processing, preserving all technical terms exactly.\n"
+        "3. Using ONLY the provided AAOIFI excerpts, compose a coherent, detailed answer in English, "
+        "appending inline citations like (AAOIFI Standard X, Section Y, Paragraph Z).\n"
+        "4. Translate that answer back into the user’s original language, again preserving all technical terms and citations in English.\n"
+        "5. Return ONLY the final answer in the user’s language—do not include any internal reasoning or intermediate translations."
+    )
 
     user_prompt = (
         "Here are the relevant AAOIFI excerpts:\n\n"
         + "\n---\n".join(contexts)
-        + f"\n\nQuestion: {question}\nAnswer:"
+        + f"\n\nQuestion: {question}"
     )
 
     chat = openai.chat.completions.create(
@@ -106,7 +96,7 @@ IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any oth
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_prompt}
         ],
-        temperature=0,
+        temperature=0.2,
         max_tokens=600
     )
 
