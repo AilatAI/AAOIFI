@@ -45,6 +45,15 @@ def detect_language(text: str) -> str:
     else:
         return 'en'
 
+# ─── 3.1. Человеко-читаемые названия языков ────────────────────────────────────
+LANG_NAMES = {
+    'en': 'English',
+    'ru': 'Russian',
+    'kk': 'Kazakh',
+    'ar': 'Arabic',
+    'ur': 'Urdu'
+}
+
 # ─── 4. Логика вашего answer_question ──────────────────────────────────────────
 def answer_question(question: str) -> str:
     lang_code = detect_language(question)
