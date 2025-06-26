@@ -72,22 +72,31 @@ def answer_question(question: str) -> str:
         for m in qr.matches
     ]
 
-    # 3) Один «meta-prompt» для всего workflow
+    # 3) Улучшенный system prompt
     system_prompt = (
-        f"You are an AAOIFI standards expert. The user’s question is in {lang_name}.\n"
-        "When you receive a question, follow these steps:\n"
-        "1. Detect the question’s original language.\n"
-        "2. If it’s not English, translate it into English for internal processing, preserving all technical terms exactly.\n"
-        "3. Using ONLY the provided AAOIFI excerpts, compose a coherent, detailed answer in English, "
-        "appending inline citations like (AAOIFI Standard X, Section Y, Paragraph Z).\n"
-        "4. Translate that answer back into the user’s original language, again preserving all technical terms and citations in English.\n"
-        "5. Return ONLY the final answer in the user’s language—do not include any internal reasoning or intermediate translations."
+        f"You are an AAOIFI standards expert. The user is asking in {lang_name}.\n\n"
+        "Follow these steps strictly:\n"
+        "1. First understand the question's intent completely.\n"
+        "2. Search for the most relevant information in the provided AAOIFI excerpts.\n"
+        "3. If the question is not in English, process it internally in English but maintain all technical terms.\n"
+        "4. Formulate a precise, accurate answer based ONLY on the provided excerpts.\n"
+        "5. Present the answer in the user's original language ({lang_name}), keeping:\n"
+        "   - All standard numbers (like 'AAOIFI Standard 12')\n"
+        "   - All technical terms (like 'Murabaha', 'Sukuk')\n"
+        "   - All citations (like 'Section 5.2')\n"
+        "   EXACTLY as in English, without translation.\n"
+        "6. Ensure the response is natural in {lang_name} while preserving untranslatable elements.\n\n"
+        "Important:\n"
+        "- Never invent information not present in the excerpts.\n"
+        "- If unsure, say you don't know based on AAOIFI standards.\n"
+        "- For Kazakh questions, pay special attention to proper terminology."
     )
 
     user_prompt = (
-        "Here are the relevant AAOIFI excerpts:\n\n"
+        "Relevant AAOIFI excerpts:\n\n"
         + "\n---\n".join(contexts)
-        + f"\n\nQuestion: {question}"
+        + f"\n\nUser's question ({lang_name}): {question}\n\n"
+        "Provide the answer in {lang_name} following all instructions above:"
     )
 
     chat = openai.chat.completions.create(
@@ -97,7 +106,7 @@ def answer_question(question: str) -> str:
             {"role": "user",   "content": user_prompt}
         ],
         temperature=0.2,
-        max_tokens=600
+        max_tokens=800
     )
 
     return chat.choices[0].message.content.strip()
