@@ -6,14 +6,14 @@ from openai import OpenAI
 from pinecone import Pinecone
 
 # ─── 1. Конфиг ────────────────────────────────────────────────────────────────
-OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY")
-PINECONE_API_KEY   = os.getenv("PINECONE_API_KEY")
-PINECONE_ENV       = os.getenv("PINECONE_ENVIRONMENT")
-PINECONE_INDEX     = "aaoifi-standards"
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_ENV     = os.getenv("PINECONE_ENVIRONMENT")
+PINECONE_INDEX   = "aaoifi-standards"
 
-EMBED_MODEL        = "text-embedding-ada-002"
-CHAT_MODEL         = "gpt-3.5-turbo"
-TOP_K              = 5
+EMBED_MODEL = "text-embedding-ada-002"
+CHAT_MODEL  = "gpt-3.5-turbo"
+TOP_K       = 5
 
 # ─── 2. Инициализация клиентов ─────────────────────────────────────────────────
 openai = OpenAI(api_key=OPENAI_API_KEY)
@@ -21,31 +21,21 @@ pc     = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
 index  = pc.Index(PINECONE_INDEX)
 
 app = Flask(__name__)
-CORS(app, resources={
-    r"/chat": {
-      "origins": [
-        "https://www.ailat.kz",
-        "https://ailat.kz"
-      ]
-    }
-})
+CORS(app, resources={r"/chat": {"origins": ["https://www.ailat.kz", "https://ailat.kz"]}})
 
 # ─── 3. Языковая утилита ────────────────────────────────────────────────────────
 def detect_language(text: str) -> str:
-    if re.search(r"[ңғүұқәі]", text.lower()):
+    if re.search(r"[ңғүұқәі]|[\u0500-\u052F]", text):
         return 'kk'
-    elif re.search(r"[\u0500-\u052F]", text):
-        return 'kk'
-    elif re.search(r"[\u0600-\u06FF]", text):
+    if re.search(r"[\u0600-\u06FF]", text):
         return 'ar'
-    elif re.search(r"[\u0750-\u077F\uFB50-\uFDFF]", text):
+    if re.search(r"[\u0750-\u077F\uFB50-\uFDFF]", text):
         return 'ur'
-    elif re.search(r"[\u0400-\u04FF]", text):
+    if re.search(r"[\u0400-\u04FF]", text):
         return 'ru'
-    else:
-        return 'en'
+    return 'en'
 
-# ─── 3.1. Человеко-читаемые названия языков ────────────────────────────────────
+# ─── 3.1. Читаемые имена языков ─────────────────────────────────────────────────
 LANG_NAMES = {
     'en': 'English',
     'ru': 'Russian',
@@ -54,13 +44,13 @@ LANG_NAMES = {
     'ur': 'Urdu'
 }
 
-# ─── 4. Логика вашего answer_question ──────────────────────────────────────────
+# ─── 4. Логика answer_question ─────────────────────────────────────────────────
 def answer_question(question: str) -> str:
-    # 4.1) Детерктируем язык
+    # 4.1) Определяем язык
     lang_code = detect_language(question)
     lang_name = LANG_NAMES.get(lang_code, 'English')
 
-    # 4.2) Переводим на английский для Pinecone
+    # 4.2) Переводим вопрос на английский для поиска (если нужно)
     if lang_code != 'en':
         tran = openai.chat.completions.create(
             model=CHAT_MODEL,
@@ -75,7 +65,7 @@ def answer_question(question: str) -> str:
     else:
         eng_question = question
 
-    # 4.3) Делаем эмбединг и ищем по индексу
+    # 4.3) Создаем embedding и ищем по Pinecone
     resp  = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
     q_emb = resp.data[0].embedding
     qr    = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
@@ -86,11 +76,10 @@ def answer_question(question: str) -> str:
     ]
 
     # 4.4) Один чат-вызов: перевод → ответ → перевод назад
-    system_prompt = f"""
-You are an AAOIFI standards expert. The user’s question is in {lang_name} (ISO code: {lang_code}).
-Step 1: Internally translate the question into English, preserving ALL AAOIFI/Islamic-finance technical terms unchanged.
+    system_prompt = f"""You are an AAOIFI standards expert. The user’s question is in {lang_name} (ISO code: {lang_code}).
+Step 1: Internally translate the question into English, preserving ALL AAOIFI/Islamic-finance technical terms exactly.
 Step 2: Using ONLY the provided English AAOIFI excerpts, compose a coherent, detailed answer in English, with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.
-Step 3: Translate that entire English answer back into {lang_name}, preserving meaning exactly, keeping all AAOIFI technical terms and citations in English.
+Step 3: Translate that entire English answer back into {lang_name}, preserving meaning exactly and keeping all AAOIFI technical terms and citations in English.
 
 IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any other English words or sentences.
 """
@@ -104,26 +93,25 @@ IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any oth
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role":"system", "content": system_prompt},
-            {"role":"user",   "content": user_prompt}
+            {"role": "system", "content": system_prompt},
+            {"role": "user",   "content": user_prompt}
         ],
         temperature=0.2,
-        max_tokens=600
+        max_tokens=1024
     )
 
     return chat.choices[0].message.content.strip()
 
 # ─── 5. Flask‐эндпоинт ─────────────────────────────────────────────────────────
 @app.route("/chat", methods=["GET"])
-def chat():
+def chat_endpoint():
     question = request.args.get("question", "").strip()
     if not question:
         return "No question provided", 400
     try:
-        answer = answer_question(question)
-        return answer
+        return answer_question(question)
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        return f"Error: {e}", 500
 
 # ─── 6. Запуск ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
