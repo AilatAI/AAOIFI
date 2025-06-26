@@ -56,12 +56,27 @@ LANG_NAMES = {
 
 # ─── 4. Логика вашего answer_question ──────────────────────────────────────────
 def answer_question(question: str) -> str:
+    # 1) Определяем язык и получаем человеко-читаемое имя
     lang_code = detect_language(question)
     lang_name = LANG_NAMES.get(lang_code, 'English')
 
-    # 1) Получаем embedding на английском
-    #    (пусть GPT сам переведёт внутрь системы)
-    resp = openai.embeddings.create(model=EMBED_MODEL, input=question)
+    # 2) Переводим вопрос на английский для поиска в Pinecone, если нужно
+    if lang_code != 'en':
+        tran = openai.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role":"system", "content":
+                    "Translate the following into English, preserving all AAOIFI/Islamic-finance terms exactly."},
+                {"role":"user",   "content": question}
+            ],
+            temperature=0.1
+        )
+        eng_question = tran.choices[0].message.content.strip()
+    else:
+        eng_question = question
+
+    # 3) Получаем embedding уже от английского текста
+    resp = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
     q_emb = resp.data[0].embedding
     qr = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
 
@@ -73,15 +88,18 @@ def answer_question(question: str) -> str:
         num   = md.get("standard_number", "")
         contexts.append(f"{title} (Std {num}):\n{txt}")
 
-    # 2) Один вызов: перевод вопроса → поиск ответа → перевод ответа назад
+    # 4) Один вызов: перевод вопроса → поиск ответа → перевод ответа назад
     system = {
         "role": "system",
         "content": (
             f"You are an AAOIFI standards expert. The user’s question is in {lang_name} ({lang_code}).\n"
             "1. Translate the question _internally_ into English, preserving all AAOIFI/Islamic-finance terms exactly.\n"
-            "2. Using ONLY the provided English AAOIFI excerpts, compose a detailed answer in English, with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.\n"
-            f"3. Translate _that_ English answer back into {lang_name}, preserving meaning exactly and keeping all AAOIFI technical terms in English.\n\n"
-            f"IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}, except for the AAOIFI terms (e.g. “murabaha”, “sukuk”, “Ijarah”) and the citations, which stay in English. "
+            "2. Using ONLY the provided English AAOIFI excerpts, compose a detailed answer in English, "
+            "with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.\n"
+            f"3. Translate _that_ English answer back into {lang_name}, preserving meaning exactly and keeping "
+            "all AAOIFI technical terms in English.\n\n"
+            f"IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}, except for the AAOIFI terms "
+            "(e.g. “murabaha”, “sukuk”, “Ijarah”) and the citations, which stay in English. "
             "Do NOT include any other English words or sentences."
         )
     }
