@@ -53,7 +53,8 @@ def answer_question(question: str) -> str:
             "4. Synthesize a coherent, detailed answer in English, appending inline citations like "
             "(AAOIFI Std X Sec Y ¶ Z) as markdown links.\n"
             "5. If the original question was not in English, translate your English answer back into the "
-            "original language, again preserving ALL technical terms.\n"
+            "original language, again preserving ALL technical terms — and ensure the entire output is "
+            "in that language with no remaining English text (aside from citation IDs themselves).\n"
             "6. Return ONLY the final answer in the user’s language—do not reveal any internal steps."
         )
     }
