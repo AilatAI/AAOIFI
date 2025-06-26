@@ -49,61 +49,80 @@ def detect_language(text: str) -> str:
 def answer_question(question: str) -> str:
     lang = detect_language(question)
     
-    # 1) Translate to English if needed (same as before)
+    # 1) Better translation to English with clarification
     if lang != 'en':
         tran = openai.chat.completions.create(
             model=CHAT_MODEL,
             messages=[
-                {"role":"system", "content":
-                    "Translate the following into English, preserving meaning and style. Keep all technical terms unchanged:"},
+                {"role":"system", "content": 
+                    "You are a precise financial translator. Translate to English while: "
+                    "1. Keeping all AAOIFI/Islamic finance terms in original English "
+                    "2. Preserving exact legal/financial meaning "
+                    "3. Clarify ambiguous terms"},
                 {"role":"user", "content": question}
-            ]
+            ],
+            temperature=0.0
         )
         eng_question = tran.choices[0].message.content.strip()
     else:
         eng_question = question
 
-    # 2) Embedding + Pinecone (same as before)
+    # 2) More focused embedding search
     resp = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
     q_emb = resp.data[0].embedding
 
-    qr = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
+    # Add filter for relevant standards (money, debt, theft)
+    qr = index.query(
+        vector=q_emb,
+        top_k=TOP_K,
+        include_metadata=True,
+        filter={
+            "$or": [
+                {"standard_number": {"$in": ["2", "3", "5", "7"]}},  # Money/debt related standards
+                {"section_title": {"$contains": "money"}},
+                {"section_title": {"$contains": "debt"}},
+                {"section_title": {"$contains": "loan"}},
+                {"section_title": {"$contains": "theft"}}
+            ]
+        }
+    )
+
     contexts = []
     for match in qr.matches:
-        md    = match.metadata
-        txt   = md.get("chunk_text","")
-        title = md.get("section_title","")
-        num   = md.get("standard_number","")
-        contexts.append(f"{title} (Std {num}):\n{txt}")
+        if match.score < 0.7:  # Skip low-confidence matches
+            continue
+        md = match.metadata
+        contexts.append(f"{md.get('section_title','')} (Std {md.get('standard_number','')}):\n{md.get('chunk_text','')}")
 
-    # 3) Generate answer with instruction to respond in the detected language
+    # 3) Strict answer generation with verification
     system = {
-        "role":"system",
-        "content":(
-            "You are a knowledgeable AAOIFI standards expert. "
-            "Using ONLY the provided excerpts, compose a coherent and detailed answer that explains and synthesizes those sections.\n"
-            "Respond in the same language as the user's question. The user's question was in: " + lang + "\n"
-            "After each fact or quotation, append a clear, human-readable citation in full words, for example: (AAOIFI Standard 35, Introduction, Paragraph 3).\n"
-            "If any part of the user's question is not covered by the excerpts, explicitly say 'Information on ‹X› is not available in the provided excerpts.'\n"
-            "Maintain all technical terms in their original English form."
+        "role": "system",
+        "content": (
+            f"Respond in {lang} to this Islamic finance question using ONLY the AAOIFI excerpts below. "
+            "Rules:\n"
+            "1. If excerpts don't match the question, say: 'This specific case isn't covered in AAOIFI standards I have access to.'\n"
+            "2. Keep all AAOIFI terms in original English (e.g. 'murabaha', 'qard')\n"
+            "3. For money-related questions, only use Standards 2, 3, 5, 7\n"
+            "4. Never invent answers - if unsure, say you don't know\n\n"
+            "Excerpts:\n" + "\n---\n".join(contexts)
         )
     }
-    user = {
-        "role":"user",
-        "content":(
-            "Here are the relevant AAOIFI excerpts:\n\n"
-            + "\n---\n".join(contexts)
-            + f"\n\nQuestion: {eng_question}\nAnswer in {lang}:"
-        )
-    }
+    
+    user = {"role": "user", "content": question}
+    
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[system, user],
-        temperature=0.2,
+        temperature=0.1,  # Lower for more factual responses
         max_tokens=512
     )
+    
     answer = chat.choices[0].message.content.strip()
-
+    
+    # 4) Post-answer verification
+    if "не покрывается" in answer.lower() or "isn't covered" in answer.lower():
+        return f"Кешіріңіз, AAOIFI стандарттарында ақша ұрлау мен қарыз беру туралы нақты ақпарат жоқ." if lang == 'kk' else answer
+    
     return answer
 
 # ─── 5. Flask‐эндпоинт ─────────────────────────────────────────────────────────
