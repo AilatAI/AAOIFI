@@ -72,6 +72,7 @@ def answer_question(question: str) -> str:
     q_emb = resp.data[0].embedding
 
     # Add filter for relevant standards (money, debt, theft)
+    # Using only valid Pinecone operators
     qr = index.query(
         vector=q_emb,
         top_k=TOP_K,
@@ -79,35 +80,45 @@ def answer_question(question: str) -> str:
         filter={
             "$or": [
                 {"standard_number": {"$in": ["2", "3", "5", "7"]}},  # Money/debt related standards
-                {"section_title": {"$contains": "money"}},
-                {"section_title": {"$contains": "debt"}},
-                {"section_title": {"$contains": "loan"}},
-                {"section_title": {"$contains": "theft"}}
+                # Removed invalid $contains filters
             ]
         }
     )
 
+    # Additional filtering for relevant content in Python
     contexts = []
+    money_related_keywords = ["money", "debt", "loan", "theft", "steal", "borrow"]
+    
     for match in qr.matches:
         if match.score < 0.7:  # Skip low-confidence matches
             continue
+            
         md = match.metadata
-        contexts.append(f"{md.get('section_title','')} (Std {md.get('standard_number','')}):\n{md.get('chunk_text','')}")
+        section_title = md.get('section_title', '').lower()
+        chunk_text = md.get('chunk_text', '').lower()
+        
+        # Check if any keyword exists in either title or text
+        if any(keyword in section_title or keyword in chunk_text 
+               for keyword in money_related_keywords):
+            contexts.append(
+                f"{md.get('section_title','')} (Std {md.get('standard_number','')}):\n"
+                f"{md.get('chunk_text','')}"
+            )
 
     # 3) Strict answer generation with verification
-    system = {
-        "role": "system",
-        "content": (
-            f"Respond in {lang} to this Islamic finance question using ONLY the AAOIFI excerpts below. "
-            "Rules:\n"
-            "1. If excerpts don't match the question, say: 'This specific case isn't covered in AAOIFI standards I have access to.'\n"
-            "2. Keep all AAOIFI terms in original English (e.g. 'murabaha', 'qard')\n"
-            "3. For money-related questions, only use Standards 2, 3, 5, 7\n"
-            "4. Never invent answers - if unsure, say you don't know\n\n"
-            "Excerpts:\n" + "\n---\n".join(contexts)
-        )
-    }
+    system_content = (
+        f"Respond in {lang} to this Islamic finance question using ONLY the AAOIFI excerpts below. "
+        "Rules:\n"
+        "1. If excerpts don't match the question, say: 'This specific case isn't covered in AAOIFI standards I have access to.'\n"
+        "2. Keep all AAOIFI terms in original English (e.g. 'murabaha', 'qard')\n"
+        "3. For money-related questions, only use Standards 2, 3, 5, 7\n"
+        "4. Never invent answers - if unsure, say you don't know"
+    )
     
+    if contexts:
+        system_content += "\n\nExcerpts:\n" + "\n---\n".join(contexts)
+    
+    system = {"role": "system", "content": system_content}
     user = {"role": "user", "content": question}
     
     chat = openai.chat.completions.create(
@@ -119,9 +130,15 @@ def answer_question(question: str) -> str:
     
     answer = chat.choices[0].message.content.strip()
     
-    # 4) Post-answer verification
-    if "не покрывается" in answer.lower() or "isn't covered" in answer.lower():
-        return f"Кешіріңіз, AAOIFI стандарттарында ақша ұрлау мен қарыз беру туралы нақты ақпарат жоқ." if lang == 'kk' else answer
+    # 4) Post-answer verification and language-specific fallback
+    not_covered_phrases = ["isn't covered", "not covered", "не покрывается", "жоқ"]
+    if any(phrase in answer.lower() for phrase in not_covered_phrases):
+        if lang == 'kk':
+            return "Кешіріңіз, AAOIFI стандарттарында ақша ұрлау мен қарыз беру туралы нақты ақпарат жоқ."
+        elif lang == 'ru':
+            return "Извините, в стандартах AAOIFI нет конкретной информации о краже денег и их кредитовании."
+        else:
+            return "Sorry, the AAOIFI standards don't contain specific information about money theft and lending."
     
     return answer
 
