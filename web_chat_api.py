@@ -45,7 +45,7 @@ LANG_NAMES = {
 }
 
 # ─── 4. Логика answer_question ─────────────────────────────────────────────────
-def answer_question(question: str) -> str:
+ def answer_question(question: str) -> str:
      # 4.1) Определяем язык
      lang_code = detect_language(question)
      lang_name = LANG_NAMES.get(lang_code, 'English')
@@ -104,8 +104,8 @@ def answer_question(question: str) -> str:
 -            {"role":"user",   "content": user_prompt}
 +            {"role": "user",   "content": user_prompt}
          ],
-         temperature=0.2,
-         max_tokens=1024
+         temperature=0,
+         max_tokens=600
      )
  
      return chat.choices[0].message.content.strip()
