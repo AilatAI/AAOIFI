@@ -30,51 +30,96 @@ CORS(app, resources={
     }
 })
 
-# ─── 3. Основная логика ─────────────────────────────────────────────────────────
+# ─── 3. Языковая утилита ────────────────────────────────────────────────────────
+def detect_language(text: str) -> str:
+    if re.search(r"[ңғүұқәі]", text.lower()):
+        return 'kk'
+    elif re.search(r"[\u0500-\u052F]", text):
+        return 'kk'
+    elif re.search(r"[\u0600-\u06FF]", text):
+        return 'ar'
+    elif re.search(r"[\u0750-\u077F\uFB50-\uFDFF]", text):
+        return 'ur'
+    elif re.search(r"[\u0400-\u04FF]", text):
+        return 'ru'
+    else:
+        return 'en'
+
+# ─── 4. Логика вашего answer_question ──────────────────────────────────────────
 def answer_question(question: str) -> str:
-    # 1) Embedding + Pinecone lookup
-    resp = openai.embeddings.create(model=EMBED_MODEL, input=question)
+    lang = detect_language(question)
+    
+    # 1) Перевод на английский, если нужно
+    if lang != 'en':
+        tran = openai.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role":"system", "content":
+                    "Translate the following into English, preserving meaning and style. Keep all technical terms unchanged:"},
+                {"role":"user", "content": question}
+            ]
+        )
+        eng_question = tran.choices[0].message.content.strip()
+    else:
+        eng_question = question
+
+    # 2) Embedding + Pinecone
+    resp = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
     q_emb = resp.data[0].embedding
 
     qr = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
-    contexts = [
-        f"{m.metadata.get('section_title','')} (Std {m.metadata.get('standard_number','')}):\n{m.metadata.get('chunk_text','')}"
-        for m in qr.matches
-    ]
+    contexts = []
+    for match in qr.matches:
+        md    = match.metadata
+        txt   = md.get("chunk_text","")
+        title = md.get("section_title","")
+        num   = md.get("standard_number","")
+        contexts.append(f"{title} (Std {num}):\n{txt}")
 
-    # 2) One‐shot prompt: detect → translate → retrieve → answer → re‐translate
+    # 3) Генерация ответа на английском
     system = {
-        "role": "system",
-        "content": (
-            "You are an AAOIFI standards expert. When you receive a question, follow these steps:\n"
-            "1. Detect the question’s original language (e.g. ru, kk, en, ar).\n"
-            "2. If it’s not in English, translate it into English for internal use, preserving ALL technical terms exactly.\n"
-            "3. Using ONLY the provided excerpts, compose a coherent and detailed answer that explains and synthesizes those sections.\n"
-            "4. After each fact or quotation, append a clear, human-readable citation in full words, for example: (AAOIFI Standard 35, Introduction, Paragraph 3).\n"
-            "5. If the original question was not in English, translate your English answer back into the original language—again preserving ALL technical terms and ensuring no English text remains (aside from the citation IDs themselves).\n"
-            "6. If any part of the user’s question is not covered by the excerpts, explicitly say “Information on ‹X› is not available in the provided excerpts.”\n"
-            "7. Return ONLY the final answer in the user’s language—do NOT include any of your internal steps, translations, or reasoning."
+        "role":"system",
+        "content":(
+            "You are a knowledgeable AAOIFI standards expert. "
+            "Using only the provided excerpts, compose a coherent and detailed answer "
+            "that explains and synthesizes the relevant sections. "
+            "After each fact or quotation, append a clear, human-readable citation in full words—"
+            "for example: (AAOIFI Standard 35, Introduction, Paragraph 3). "
+            "If the information is incomplete, clearly state what is missing. "
+            "Maintain all technical terms in their original form."
         )
     }
     user = {
-        "role": "user",
-        "content": (
+        "role":"user",
+        "content":(
             "Here are the relevant AAOIFI excerpts:\n\n"
             + "\n---\n".join(contexts)
-            + f"\n\nQuestion: {question}"
+            + f"\n\nQuestion: {eng_question}\nAnswer:"
         )
     }
-
-    chat_resp = openai.chat.completions.create(
+    chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[system, user],
         temperature=0.2,
-        max_tokens=600
+        max_tokens=512
     )
+    eng_answer = chat.choices[0].message.content.strip()
 
-    return chat_resp.choices[0].message.content.strip()
+    # 4) Перевод обратно, если нужно
+    if lang != 'en':
+        tran_back = openai.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=[
+                {"role":"system","content":
+                    f"Translate the following into {lang}, preserving meaning and style. Keep all AAOIFI technical terms in their original English form:"},
+                {"role":"user",  "content": eng_answer}
+            ]
+        )
+        return tran_back.choices[0].message.content.strip()
 
-# ─── 4. Flask‐эндпоинт ─────────────────────────────────────────────────────────
+    return eng_answer
+
+# ─── 5. Flask‐эндпоинт ─────────────────────────────────────────────────────────
 @app.route("/chat", methods=["GET"])
 def chat():
     question = request.args.get("question", "").strip()
@@ -86,6 +131,6 @@ def chat():
     except Exception as e:
         return f"Error: {str(e)}", 500
 
-# ─── 5. Запуск ─────────────────────────────────────────────────────────────────
+# ─── 6. Запуск ─────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
