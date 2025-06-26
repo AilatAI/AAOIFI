@@ -47,63 +47,52 @@ def detect_language(text: str) -> str:
 
 # ─── 4. Логика вашего answer_question ──────────────────────────────────────────
 def answer_question(question: str) -> str:
-    lang = detect_language(question)
-    
-    # 1) Translate to English if needed (for knowledge base search)
-    if lang != 'en':
-        tran = openai.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role":"system", "content":
-                    "Translate the following into English, preserving meaning and style. "
-                    "Keep all AAOIFI/Islamic finance terms unchanged. "
-                    "If unclear, keep the original term in [brackets]."},
-                {"role":"user", "content": question}
-            ],
-            temperature=0.1
-        )
-        eng_question = tran.choices[0].message.content.strip()
-    else:
-        eng_question = question
+    lang_code = detect_language(question)
+    lang_name = LANG_NAMES.get(lang_code, 'English')
 
-    # 2) Embedding + Pinecone (unchanged)
-    resp = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
+    # 1) Получаем embedding на английском
+    #    (пусть GPT сам переведёт внутрь системы)
+    resp = openai.embeddings.create(model=EMBED_MODEL, input=question)
     q_emb = resp.data[0].embedding
-
     qr = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
+
     contexts = []
-    for match in qr.matches:
-        md    = match.metadata
-        txt   = md.get("chunk_text","")
-        title = md.get("section_title","")
-        num   = md.get("standard_number","")
+    for m in qr.matches:
+        md    = m.metadata
+        txt   = md.get("chunk_text", "")
+        title = md.get("section_title", "")
+        num   = md.get("standard_number", "")
         contexts.append(f"{title} (Std {num}):\n{txt}")
 
-    # 3) Generate answer in the original language
+    # 2) Один вызов: перевод вопроса → поиск ответа → перевод ответа назад
     system = {
-        "role":"system",
-        "content":(
-            f"You are an AAOIFI standards expert. Respond in {lang} using ONLY these excerpts:\n"
-            "1. Keep all AAOIFI terms in original English (e.g., 'murabaha', 'sukuk')\n"
-            "2. For citations use format: (AAOIFI Standard 35, Introduction)\n"
-            "3. If question isn't covered, say: \"This specific case isn't covered in available AAOIFI standards\"\n"
-            "4. Maintain professional Islamic finance terminology\n\n"
-            "Available excerpts:\n" + "\n---\n".join(contexts)
+        "role": "system",
+        "content": (
+            f"You are an AAOIFI standards expert. The user’s question is in {lang_name}.\n"
+            "Step 1: Translate the question into English for your own processing, preserving ALL AAOIFI/Islamic-finance terms.\n"
+            "Step 2: Using ONLY the provided English excerpts, compose a coherent, detailed answer in English, "
+            "with citations like (AAOIFI Standard 35, Introduction, Paragraph X).\n"
+            f"Step 3: Translate that English answer back into {lang_name}, keeping all technical terms in English.\n"
+            "Output ONLY the final answer in the user’s original language."
         )
     }
-    
+
     user = {
-        "role":"user",
-        "content": f"Question: {question}\n\nAnswer in {lang} using only provided AAOIFI standards:"
+        "role": "user",
+        "content": (
+            "Here are the relevant AAOIFI excerpts:\n\n"
+            + "\n---\n".join(contexts)
+            + f"\n\nQuestion: {question}\nAnswer:"
+        )
     }
-    
+
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[system, user],
         temperature=0.2,
         max_tokens=512
     )
-    
+
     return chat.choices[0].message.content.strip()
 
 # ─── 5. Flask‐эндпоинт ─────────────────────────────────────────────────────────
