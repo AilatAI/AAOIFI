@@ -49,7 +49,7 @@ def detect_language(text: str) -> str:
 def answer_question(question: str) -> str:
     lang = detect_language(question)
     
-    # 1) Перевод на английский, если нужно
+    # 1) Translate to English if needed (same as before)
     if lang != 'en':
         tran = openai.chat.completions.create(
             model=CHAT_MODEL,
@@ -63,7 +63,7 @@ def answer_question(question: str) -> str:
     else:
         eng_question = question
 
-    # 2) Embedding + Pinecone
+    # 2) Embedding + Pinecone (same as before)
     resp = openai.embeddings.create(model=EMBED_MODEL, input=eng_question)
     q_emb = resp.data[0].embedding
 
@@ -76,15 +76,16 @@ def answer_question(question: str) -> str:
         num   = md.get("standard_number","")
         contexts.append(f"{title} (Std {num}):\n{txt}")
 
-    # 3) Генерация ответа на английском
+    # 3) Generate answer with instruction to respond in the detected language
     system = {
         "role":"system",
         "content":(
             "You are a knowledgeable AAOIFI standards expert. "
             "Using ONLY the provided excerpts, compose a coherent and detailed answer that explains and synthesizes those sections.\n"
+            "Respond in the same language as the user's question. The user's question was in: " + lang + "\n"
             "After each fact or quotation, append a clear, human-readable citation in full words, for example: (AAOIFI Standard 35, Introduction, Paragraph 3).\n"
-            "If any part of the user’s question is not covered by the excerpts, explicitly say “Information on ‹X› is not available in the provided excerpts.”\n"
-            "Maintain all technical terms in their original form."
+            "If any part of the user's question is not covered by the excerpts, explicitly say 'Information on ‹X› is not available in the provided excerpts.'\n"
+            "Maintain all technical terms in their original English form."
         )
     }
     user = {
@@ -92,7 +93,7 @@ def answer_question(question: str) -> str:
         "content":(
             "Here are the relevant AAOIFI excerpts:\n\n"
             + "\n---\n".join(contexts)
-            + f"\n\nQuestion: {eng_question}\nAnswer:"
+            + f"\n\nQuestion: {eng_question}\nAnswer in {lang}:"
         )
     }
     chat = openai.chat.completions.create(
@@ -101,21 +102,9 @@ def answer_question(question: str) -> str:
         temperature=0.2,
         max_tokens=512
     )
-    eng_answer = chat.choices[0].message.content.strip()
+    answer = chat.choices[0].message.content.strip()
 
-    # 4) Перевод обратно, если нужно
-    if lang != 'en':
-        tran_back = openai.chat.completions.create(
-            model=CHAT_MODEL,
-            messages=[
-                {"role":"system","content":
-                    f"Translate the following into {lang}, preserving meaning and style. Keep all AAOIFI technical terms in their original English form:"},
-                {"role":"user",  "content": eng_answer}
-            ]
-        )
-        return tran_back.choices[0].message.content.strip()
-
-    return eng_answer
+    return answer
 
 # ─── 5. Flask‐эндпоинт ─────────────────────────────────────────────────────────
 @app.route("/chat", methods=["GET"])
