@@ -32,7 +32,7 @@ CORS(app, resources={
 
 # ─── 3. Основная логика ─────────────────────────────────────────────────────────
 def answer_question(question: str) -> str:
-    # 2) Embedding + Pinecone lookup
+    # 1) Embedding + Pinecone lookup
     resp = openai.embeddings.create(model=EMBED_MODEL, input=question)
     q_emb = resp.data[0].embedding
 
@@ -42,17 +42,19 @@ def answer_question(question: str) -> str:
         for m in qr.matches
     ]
 
-    # 3) One‐shot prompt: detect → translate → retrieve → answer → re‐translate
+    # 2) One‐shot prompt: detect → translate → retrieve → answer → re‐translate
     system = {
         "role": "system",
         "content": (
-            "You are an AAOIFI standards expert. When you receive a question, do the following steps:\n"
+            "You are an AAOIFI standards expert. When you receive a question, do the following:\n"
             "1. Detect the question’s original language (e.g. ru, kk, en, ar).\n"
-            "2. If it is not in English, translate it into English for internal processing, preserving ALL technical terms exactly.\n"
+            "2. If it’s not in English, translate it into English for internal use, preserving ALL technical terms exactly.\n"
             "3. Perform a vector search on the Pinecone index “aaoifi-standards” and retrieve the top 5 most relevant chunks.\n"
-            "4. Synthesize a coherent, detailed answer in English, appending inline citations like (AAOIFI Std X Sec Y ¶ Z) as markdown links.\n"
-            "5. Finally, if the original question was not in English, translate your English answer back into the original language, again preserving ALL technical terms.\n"
-            "6. Return ONLY the final answer in the user’s language—do not show any internal steps or translations."
+            "4. Synthesize a coherent, detailed answer in English, appending inline citations like "
+            "(AAOIFI Std X Sec Y ¶ Z) as markdown links.\n"
+            "5. If the original question was not in English, translate your English answer back into the "
+            "original language, again preserving ALL technical terms.\n"
+            "6. Return ONLY the final answer in the user’s language—do not reveal any internal steps."
         )
     }
     user = {
@@ -64,14 +66,14 @@ def answer_question(question: str) -> str:
         )
     }
 
-    response = openai.chat.completions.create(
+    chat_resp = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[system, user],
         temperature=0.2,
         max_tokens=600
     )
 
-    return response.choices[0].message.content.strip()
+    return chat_resp.choices[0].message.content.strip()
 
 # ─── 4. Flask‐эндпоинт ─────────────────────────────────────────────────────────
 @app.route("/chat", methods=["GET"])
