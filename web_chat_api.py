@@ -80,21 +80,19 @@ def answer_question(question: str) -> str:
     q_emb = resp.data[0].embedding
     qr    = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
 
-    contexts = []
-    for match in qr.matches:
-        md    = match.metadata
-        txt   = md.get("chunk_text", "")
-        title = md.get("section_title", "")
-        num   = md.get("standard_number", "")
-        contexts.append(f"{title} (Std {num}):\n{txt}")
+    contexts = [
+        f"{m.metadata.get('section_title')} (Std {m.metadata.get('standard_number')}):\n{m.metadata.get('chunk_text')}"
+        for m in qr.matches
+    ]
 
-    # 4.4) Один чат-вызов: внутренняя трансляция → ответ по английским фрагментам → перевод назад
-    system_prompt = f"""You are an AAOIFI standards expert. The user’s question is in {lang_name} ({lang_code}).
-1. Translate the question _internally_ into English, preserving all AAOIFI/Islamic-finance terms exactly.
-2. Using ONLY the provided English AAOIFI excerpts, compose a detailed answer in English with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.
-3. Translate that English answer back into {lang_name}, preserving meaning exactly and keeping all AAOIFI technical terms in English.
+    # 4.4) Один чат-вызов: перевод → ответ → перевод назад
+    system_prompt = f"""
+You are an AAOIFI standards expert. The user’s question is in {lang_name} (ISO code: {lang_code}).
+Step 1: Internally translate the question into English, preserving ALL AAOIFI/Islamic-finance technical terms unchanged.
+Step 2: Using ONLY the provided English AAOIFI excerpts, compose a coherent, detailed answer in English, with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.
+Step 3: Translate that entire English answer back into {lang_name}, preserving meaning exactly, keeping all AAOIFI technical terms and citations in English.
 
-IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}, except for the AAOIFI terms (e.g. “murabaha”, “sukuk”, “Ijarah”) and the citations, which stay in English. Do NOT include any other English words or sentences.
+IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}. Do NOT include any other English words or sentences.
 """
 
     user_prompt = (
@@ -106,11 +104,11 @@ IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}, except for the AAOIFI 
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt}
+            {"role":"system", "content": system_prompt},
+            {"role":"user",   "content": user_prompt}
         ],
         temperature=0.2,
-        max_tokens=1024
+        max_tokens=600
     )
 
     return chat.choices[0].message.content.strip()
