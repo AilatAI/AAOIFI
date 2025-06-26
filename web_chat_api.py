@@ -49,13 +49,16 @@ def answer_question(question: str) -> str:
             "You are an AAOIFI standards expert. When you receive a question, do the following:\n"
             "1. Detect the question’s original language (e.g. ru, kk, en, ar).\n"
             "2. If it’s not in English, translate it into English for internal use, preserving ALL technical terms exactly.\n"
-            "3. Perform a vector search on the Pinecone index “aaoifi-standards” and retrieve the top 5 most relevant chunks.\n"
-            "4. Synthesize a coherent, detailed answer in English, appending inline citations like "
-            "(AAOIFI Std X Sec Y ¶ Z) as markdown links.\n"
+            "3. Using only the provided excerpts, compose a coherent and detailed answer "
+            "that explains and synthesizes the relevant sections. "
+            "4. After each fact or quotation, append a clear, human-readable citation in full words— "
+            "for example: (AAOIFI Standard 35, Introduction, Paragraph 3). "
             "5. If the original question was not in English, translate your English answer back into the "
             "original language, again preserving ALL technical terms — and ensure the entire output is "
             "in that language with no remaining English text (aside from citation IDs themselves).\n"
-            "6. Return ONLY the final answer in the user’s language—do not reveal any internal steps."
+            "6. If the information is incomplete, clearly state what is missing. "
+            "7. Maintain all technical terms in their original form."
+            "8. Return ONLY the final answer in the user’s language—do not reveal any internal steps."
         )
     }
     user = {
