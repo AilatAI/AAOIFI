@@ -77,12 +77,12 @@ def answer_question(question: str) -> str:
     system = {
         "role": "system",
         "content": (
-            f"You are an AAOIFI standards expert. The user’s question is in {lang_name}.\n"
-            "Step 1: Translate the question into English for your own processing, preserving ALL AAOIFI/Islamic-finance terms.\n"
-            "Step 2: Using ONLY the provided English excerpts, compose a coherent, detailed answer in English, "
-            "with citations like (AAOIFI Standard 35, Introduction, Paragraph X).\n"
-            f"Step 3: Translate that English answer back into {lang_name}, keeping all technical terms in English.\n"
-            "Output ONLY the final answer in the user’s original language."
+            f"You are an AAOIFI standards expert. The user’s question is in {lang_name} ({lang_code}).\n"
+            "1. Translate the question _internally_ into English, preserving all AAOIFI/Islamic-finance terms exactly.\n"
+            "2. Using ONLY the provided English AAOIFI excerpts, compose a detailed answer in English, with citations like “(AAOIFI Standard 35, Introduction, Paragraph 3)”.\n"
+            f"3. Translate _that_ English answer back into {lang_name}, preserving meaning exactly and keeping all AAOIFI technical terms in English.\n\n"
+            f"IMPORTANT: Your FINAL OUTPUT MUST BE 100% in {lang_name}, except for the AAOIFI terms (e.g. “murabaha”, “sukuk”, “Ijarah”) and the citations, which stay in English. "
+            "Do NOT include any other English words or sentences."
         )
     }
 
@@ -99,7 +99,7 @@ def answer_question(question: str) -> str:
         model=CHAT_MODEL,
         messages=[system, user],
         temperature=0.2,
-        max_tokens=512
+        max_tokens=600
     )
 
     return chat.choices[0].message.content.strip()
