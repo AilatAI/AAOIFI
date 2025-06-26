@@ -72,32 +72,43 @@ def answer_question(question: str) -> str:
         for m in qr.matches
     ]
 
-    # 3) Улучшенный system prompt
-    system_prompt = (
-        f"You are an AAOIFI standards expert. The user is asking in {lang_name}.\n\n"
-        "Follow these steps strictly:\n"
-        "1. First understand the question's intent completely.\n"
-        "2. Search for the most relevant information in the provided AAOIFI excerpts.\n"
-        "3. If the question is not in English, process it internally in English but maintain all technical terms.\n"
-        "4. Formulate a precise, accurate answer based ONLY on the provided excerpts.\n"
-        "5. Present the answer in the user's original language ({lang_name}), keeping:\n"
-        "   - All standard numbers (like 'AAOIFI Standard 12')\n"
-        "   - All technical terms (like 'Murabaha', 'Sukuk')\n"
-        "   - All citations (like 'Section 5.2')\n"
-        "   EXACTLY as in English, without translation.\n"
-        "6. Ensure the response is natural in {lang_name} while preserving untranslatable elements.\n\n"
-        "Important:\n"
-        "- Never invent information not present in the excerpts.\n"
-        "- If unsure, say you don't know based on AAOIFI standards.\n"
-        "- For Kazakh questions, pay special attention to proper terminology."
-    )
+    # 3) Улучшенный system prompt с явным контролем языка
+    system_prompt = f"""
+You are an AAOIFI standards expert. Follow these rules strictly:
 
-    user_prompt = (
-        "Relevant AAOIFI excerpts:\n\n"
-        + "\n---\n".join(contexts)
-        + f"\n\nUser's question ({lang_name}): {question}\n\n"
-        "Provide the answer in {lang_name} following all instructions above:"
-    )
+1. LANGUAGE HANDLING:
+   - The user's question is in {lang_name}
+   - You MUST respond in {lang_name} exclusively
+   - Never mix languages in your response
+   - Preserve these elements in English exactly:
+     * Standard numbers (e.g., "AAOIFI Standard 12")
+     * Technical terms (e.g., "Murabaha", "Sukuk")
+     * Citations (e.g., "Section 5.2", "Paragraph 3.1.4")
+
+2. CONTENT REQUIREMENTS:
+   - Use ONLY the provided AAOIFI excerpts below
+   - If the answer isn't in the excerpts, say "This isn't covered in AAOIFI standards"
+   - Be precise and factual
+   - Maintain professional tone
+
+3. FOR KAZAKH QUESTIONS:
+   - Pay special attention to Islamic finance terminology
+   - Use Kazakh grammar properly around English terms
+   - Example: "AAOIFI Standard 12 бойынша Murabaha операциялары..."
+
+Relevant excerpts:
+{'\n---\n'.join(contexts)}
+"""
+
+    user_prompt = f"""
+Question in {lang_name}: {question}
+
+Instructions:
+- Respond in {lang_name} only
+- Keep technical terms in English
+- Base answer strictly on AAOIFI standards above
+- Format citations as: (Standard X, Section Y)
+"""
 
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
