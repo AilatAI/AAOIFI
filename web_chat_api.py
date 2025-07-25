@@ -71,7 +71,7 @@ def answer_question(question: str) -> str:
     # 3) Создаём embedding и ищем чуть больше, чтобы поймать редкие фрагменты
     resp = openai.embeddings.create(model=EMBED_MODEL, input=q)
     q_emb = resp.data[0].embedding
-    qr    = index.query(vector=q_emb, top_k=10, include_metadata=True)
+    qr    = index.query(vector=q_emb, top_k=15, include_metadata=True)
 
     # 4) Фильтруем для конкретного стандарта, если он упомянут
     std_matches = []
