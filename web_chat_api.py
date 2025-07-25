@@ -11,7 +11,7 @@ PINECONE_API_KEY   = os.getenv("PINECONE_API_KEY")
 PINECONE_ENV       = os.getenv("PINECONE_ENVIRONMENT")
 PINECONE_INDEX     = "aaoifi-standards"
 
-EMBED_MODEL        = "text-embedding-ada-002"
+EMBED_MODEL        = "text-embedding-3-small"
 CHAT_MODEL         = "gpt-3.5-turbo"
 TOP_K              = 5
 
