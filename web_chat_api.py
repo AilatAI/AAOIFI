@@ -5,107 +5,79 @@ from flask_cors import CORS
 from openai import OpenAI
 from pinecone import Pinecone
 
-# ─── 1. Конфиг ────────────────────────────────────────────────────────────────
-OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY")
-PINECONE_API_KEY   = os.getenv("PINECONE_API_KEY")
-PINECONE_ENV       = os.getenv("PINECONE_ENVIRONMENT")
-PINECONE_INDEX     = "aaoifi-standards"
+# ─── 1. Configuration ─────────────────────────────────────────────────────
+OPENAI_API_KEY   = os.getenv("OPENAI_API_KEY")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_ENV     = os.getenv("PINECONE_ENVIRONMENT")
+PINECONE_INDEX   = os.getenv("PINECONE_INDEX", "aaoifi-standards")
 
-EMBED_MODEL        = "text-embedding-3-small"
-CHAT_MODEL         = "gpt-3.5-turbo"
-TOP_K              = 15
+EMBED_MODEL      = os.getenv("EMBED_MODEL", "text-embedding-3-small")
+CHAT_MODEL       = os.getenv("CHAT_MODEL", "gpt-3.5-turbo")
+TOP_K            = int(os.getenv("TOP_K", "15"))
 
-# ─── 2. Инициализация клиентов ─────────────────────────────────────────────────
+# ─── 2. Initialize clients ─────────────────────────────────────────────────
 openai = OpenAI(api_key=OPENAI_API_KEY)
 pc     = Pinecone(api_key=PINECONE_API_KEY, environment=PINECONE_ENV)
 index  = pc.Index(PINECONE_INDEX)
 
 app = Flask(__name__)
-CORS(app, resources={
-    r"/chat": {
-      "origins": [
-        "https://www.ailat.kz",
-        "https://ailat.kz"
-      ]
-    }
-})
+CORS(app, resources={r"/chat": {"origins": ["https://www.ailat.kz","https://ailat.kz"]}})
 
-# ─── 3. Языковая утилита ────────────────────────────────────────────────────────
+# ─── 3. Language detection ──────────────────────────────────────────────────
 def detect_language(text: str) -> str:
-    if re.search(r"[ңғүұқәі]", text.lower()):
-        return 'kk'
-    elif re.search(r"[\u0500-\u052F]", text):
-        return 'kk'
-    elif re.search(r"[\u0600-\u06FF]", text):
-        return 'ar'
-    elif re.search(r"[\u0750-\u077F\uFB50-\uFDFF]", text):
-        return 'ur'
-    elif re.search(r"[\u0400-\u04FF]", text):
-        return 'ru'
-    else:
-        return 'en'
+    if re.search(r"[ңғүұқәі]", text.lower()): return 'kk'
+    if re.search(r"[\u0500-\u052F]", text):    return 'kk'
+    if re.search(r"[\u0600-\u06FF]", text):    return 'ar'
+    if re.search(r"[\u0750-\u077F\uFB50-\uFDFF]", text): return 'ur'
+    if re.search(r"[\u0400-\u04FF]", text):    return 'ru'
+    return 'en'
 
-# ─── 3.1. Человеко-читаемые названия языков ────────────────────────────────────
-LANG_NAMES = {
-    'en': 'English',
-    'ru': 'Russian',
-    'kk': 'Kazakh',
-    'ar': 'Arabic',
-    'ur': 'Urdu'
-}
+LANG_NAMES = {'en':'English','ru':'Russian','kk':'Kazakh','ar':'Arabic','ur':'Urdu'}
 
-# ─── 4. Логика вашего answer_question ──────────────────────────────────────────
+# ─── 4. Answer logic ───────────────────────────────────────────────────────
 def answer_question(question: str) -> str:
-    # 1) Определяем язык пользователя
+    # 1) detect language
     lang_code = detect_language(question)
-    lang_name = LANG_NAMES.get(lang_code, "English")
+    lang_name = LANG_NAMES.get(lang_code, 'English')
 
-    # 2) Предобработка короткого запроса "standard X"
-    q = question.strip()
-    m = re.match(r"^standard\s+(\d+)$", q, flags=re.IGNORECASE)
+    # 2) expand short "standard X" queries
+    q_original = question.strip()
+    m = re.match(r"^standard\s+(\d+)$", q_original, flags=re.IGNORECASE)
     if m:
         num = m.group(1)
-        # развернем в более описательный запрос
+        # build descriptive query
         q = f"What is AAOIFI Standard {num} about?"
+    else:
+        q = q_original
+        num = None
 
-    # 3) Создаём embedding и ищем чуть больше, чтобы поймать редкие фрагменты
+    # 3) embedding + vector search
     resp = openai.embeddings.create(model=EMBED_MODEL, input=q)
     q_emb = resp.data[0].embedding
-    qr    = index.query(vector=q_emb, top_k=15, include_metadata=True)
+    qr    = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
 
-    # 4) Фильтруем для конкретного стандарта, если он упомянут
-    std_matches = []
-    if m:
-        for match in qr.matches:
-            if match.metadata.get("standard_number") == num:
-                std_matches.append(match)
-    if std_matches:
-        matches = std_matches
+    # 4) optionally filter for specific standard
+    if num:
+        std_matches = [m for m in qr.matches if m.metadata.get('standard_number') == num]
+        matches = std_matches or qr.matches[:5]
     else:
         matches = qr.matches[:5]
 
-    # 5) Если ничего не найдено — сразу отказываем
+    # 5) no matches → fallback
     if not matches:
         return "This isn't covered in AAOIFI standards"
 
-    # 6) Строим контекст с полным заголовком
+    # 6) build rich contexts
     contexts = []
     for m in matches:
         contexts.append(
-            f"AAOIFI Standard {m.metadata['standard_number']} – {m.metadata.get('standard_name','')}\n"
-            f"Section {m.metadata.get('section_number','')} ({m.metadata.get('section_title','')}):\n"
+            f"AAOIFI Standard {m.metadata.get('standard_number')} – {m.metadata.get('standard_name','')}\n"
+            f"Section {m.metadata.get('section_number')} ({m.metadata.get('section_title','')}):\n"
             f"{m.metadata.get('chunk_text','')}"
         )
     excerpts = "\n\n---\n\n".join(contexts)
 
-    contexts = [
-        f"{m.metadata.get('section_title','')} "
-        f"(Std {m.metadata.get('standard_number','')}):\n"
-        f"{m.metadata.get('chunk_text','')}"
-        for m in qr.matches
-    ]
-
-    # 3) Улучшенный system prompt с явным контролем языка
+    # 7) system + user prompts
     system_prompt = f"""
 You are an AAOIFI standards expert. Follow these rules strictly:
 
@@ -124,49 +96,34 @@ You are an AAOIFI standards expert. Follow these rules strictly:
    - Be precise and factual
    - Maintain professional tone
 
-3. FOR KAZAKH QUESTIONS:
-   - Pay special attention to Islamic finance terminology
-   - Use Kazakh grammar properly around English terms
-   - Example: "AAOIFI Standard 12 бойынша Murabaha операциялары..."
-
 Relevant excerpts:
-{'\n---\n'.join(contexts)}
+{excerpts}
 """
 
-    user_prompt = f"""
-Question in {lang_name}: {question}
-
-Instructions:
-- Respond in {lang_name} only
-- Keep technical terms in English
-- Base answer strictly on AAOIFI standards above
-- Format citations as: (Standard X, Section Y)
-"""
+    user_prompt = f"Question: {q_original}"
 
     chat = openai.chat.completions.create(
         model=CHAT_MODEL,
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt}
+            {"role":"system","content":system_prompt},
+            {"role":"user","content":user_prompt}
         ],
-        temperature=0.2,
+        temperature=0.0,
         max_tokens=800
     )
-
     return chat.choices[0].message.content.strip()
 
-# ─── 5. Flask‐эндпоинт ─────────────────────────────────────────────────────────
-@app.route("/chat", methods=["GET"])
+# ─── 5. Flask endpoint ─────────────────────────────────────────────────────
+@app.route('/chat', methods=['GET'])
 def chat():
-    question = request.args.get("question", "").strip()
+    question = request.args.get('question','').strip()
     if not question:
-        return "No question provided", 400
+        return 'No question provided', 400
     try:
-        answer = answer_question(question)
-        return answer
+        return answer_question(question)
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        return f"Error: {e}", 500
 
-# ─── 6. Запуск ─────────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+# ─── 6. Run server ──────────────────────────────────────────────────────────
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
