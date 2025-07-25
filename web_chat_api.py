@@ -60,10 +60,43 @@ def answer_question(question: str) -> str:
     lang_code = detect_language(question)
     lang_name = LANG_NAMES.get(lang_code, "English")
 
-    # 2) Создаём embedding и ищем в Pinecone
-    resp = openai.embeddings.create(model=EMBED_MODEL, input=question)
+    # 2) Предобработка короткого запроса "standard X"
+    q = question.strip()
+    m = re.match(r"^standard\s+(\d+)$", q, flags=re.IGNORECASE)
+    if m:
+        num = m.group(1)
+        # развернем в более описательный запрос
+        q = f"What is AAOIFI Standard {num} about?"
+
+    # 3) Создаём embedding и ищем чуть больше, чтобы поймать редкие фрагменты
+    resp = openai.embeddings.create(model=EMBED_MODEL, input=q)
     q_emb = resp.data[0].embedding
-    qr    = index.query(vector=q_emb, top_k=TOP_K, include_metadata=True)
+    qr    = index.query(vector=q_emb, top_k=10, include_metadata=True)
+
+    # 4) Фильтруем для конкретного стандарта, если он упомянут
+    std_matches = []
+    if m:
+        for match in qr.matches:
+            if match.metadata.get("standard_number") == num:
+                std_matches.append(match)
+    if std_matches:
+        matches = std_matches
+    else:
+        matches = qr.matches[:5]
+
+    # 5) Если ничего не найдено — сразу отказываем
+    if not matches:
+        return "This isn't covered in AAOIFI standards"
+
+    # 6) Строим контекст с полным заголовком
+    contexts = []
+    for m in matches:
+        contexts.append(
+            f"AAOIFI Standard {m.metadata['standard_number']} – {m.metadata.get('standard_name','')}\n"
+            f"Section {m.metadata.get('section_number','')} ({m.metadata.get('section_title','')}):\n"
+            f"{m.metadata.get('chunk_text','')}"
+        )
+    excerpts = "\n\n---\n\n".join(contexts)
 
     contexts = [
         f"{m.metadata.get('section_title','')} "
