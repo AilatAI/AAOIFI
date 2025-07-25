@@ -13,7 +13,7 @@ PINECONE_INDEX     = "aaoifi-standards"
 
 EMBED_MODEL        = "text-embedding-3-small"
 CHAT_MODEL         = "gpt-3.5-turbo"
-TOP_K              = 5
+TOP_K              = 15
 
 # ─── 2. Инициализация клиентов ─────────────────────────────────────────────────
 openai = OpenAI(api_key=OPENAI_API_KEY)
