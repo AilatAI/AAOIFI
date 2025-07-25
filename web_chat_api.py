@@ -77,7 +77,7 @@ def answer_question(question: str) -> str:
     std_matches = []
     if m:
         for match in qr.matches:
-            if match.metadata.get("standard_number") == int(num):
+            if match.metadata.get("standard_number") == num:
                 std_matches.append(match)
     if std_matches:
         matches = std_matches
